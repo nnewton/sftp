@@ -13,8 +13,5 @@ PermitRootLogin no
 X11Forwarding no
 AllowTcpForwarding no
 
-# Force sftp and chroot jail
-ChrootDirectory %h
-
 # Enable this for more logs
 #LogLevel VERBOSE
