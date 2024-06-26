@@ -12,6 +12,9 @@ UseDNS no
 PermitRootLogin no
 X11Forwarding no
 AllowTcpForwarding no
+ChallengeResponseAuthentication no
+PasswordAuthentication no
+UsePAM no
 
 # Enable this for more logs
 #LogLevel VERBOSE
