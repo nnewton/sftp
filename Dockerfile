@@ -1,6 +1,7 @@
 FROM alpine:latest
 
-RUN apk add --no-cache openssh-server rsync bash
+RUN apk --no-cache upgrade && apk add --no-cache openssh-server rsync bash
+
 RUN mkdir -p /var/run/sshd && \
     rm -f /etc/ssh/ssh_host_*key*
 
