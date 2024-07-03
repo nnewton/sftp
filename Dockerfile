@@ -1,8 +1,6 @@
-FROM debian:stable-slim
+FROM cgr.dev/chainguard/wolfi-base
 
-RUN apt-get update && apt-get upgrade -y && \
-    apt-get -y install openssh-server && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN apk add --no-cache openssh-server rsync && \
     mkdir -p /var/run/sshd && \
     rm -f /etc/ssh/ssh_host_*key*
 
