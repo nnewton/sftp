@@ -1,9 +1,7 @@
-FROM debian:stable-slim
+FROM alpine:latest
 
-RUN apt-get update && apt-get upgrade -y && \
-    apt-get -y install openssh-server && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /var/run/sshd && \
+RUN apk add --no-cache openssh-server rsync bash
+RUN mkdir -p /var/run/sshd && \
     rm -f /etc/ssh/ssh_host_*key*
 
 COPY files/sshd_config /etc/ssh/sshd_config
