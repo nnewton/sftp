@@ -1,6 +1,6 @@
 FROM debian:stable-slim
 
-RUN apt-get update && \
+RUN apt-get update && apt-get upgrade -y && \
     apt-get -y install openssh-server && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/run/sshd && \
