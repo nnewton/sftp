@@ -1,6 +1,6 @@
 FROM cgr.dev/chainguard/wolfi-base
 
-RUN apk add --no-cache openssh-server rsync && \
+RUN apk add --no-cache bash openssh-server rsync && \
     mkdir -p /var/run/sshd && \
     rm -f /etc/ssh/ssh_host_*key*
 
