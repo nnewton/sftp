@@ -33,14 +33,12 @@ log "Parsing user data: \"$1\""
 IFS=':' read -ra args <<< "$1"
 
 skipIndex=0
-chpasswdOptions=""
-useraddOptions=(--no-user-group)
+useraddOptions=(--no-user-group --shell /usr/sbin/nologin)
 
 user="${args[0]}"; validateArg "username" "$user" "$reUser" || exit 1
 pass="${args[1]}"; validateArg "password" "$pass" "$rePass" || exit 1
 
 if [ "${args[2]}" == "e" ]; then
-    chpasswdOptions="-e"
     skipIndex=1
 fi
 
@@ -54,7 +52,7 @@ if getent passwd "$user" > /dev/null; then
 fi
 
 if [ -n "$uid" ]; then
-    useraddOptions+=(--non-unique --uid "$uid")
+    useraddOptions+=(--uid "$uid")
 fi
 
 if [ -n "$gid" ]; then
@@ -75,10 +73,9 @@ chmod 755 "/home/$user"
 uid="$(id -u "$user")"
 
 if [ -n "$pass" ]; then
-    echo "$user:$pass" | chpasswd $chpasswdOptions
-else
-    usermod -p "*" "$user" # disabled password
+    log "WARNING: Password field ignored -- key-only authentication is enforced"
 fi
+usermod -p "*" "$user" # password disabled, key-only auth
 
 # Add SSH keys to authorized_keys with valid permissions
 if [ -d "/home/$user/.ssh/keys" ]; then
@@ -89,6 +86,11 @@ if [ -d "/home/$user/.ssh/keys" ]; then
     chmod 600 "/home/$user/.ssh/authorized_keys"
 fi
 
+if [ ! -f "/home/$user/.ssh/authorized_keys" ]; then
+    log "WARNING: No SSH keys found for user \"$user\" in /home/$user/.ssh/keys/"
+    log "WARNING: User \"$user\" will not be able to authenticate"
+fi
+
 # Make sure dirs exists
 if [ -n "$dir" ]; then
     IFS=',' read -ra dirArgs <<< "$dir"
@@ -97,7 +99,7 @@ if [ -n "$dir" ]; then
         if [ ! -d "$dirPath" ]; then
             log "Creating directory: $dirPath"
             mkdir -p "$dirPath"
-            chown -R "$uid:users" "$dirPath"
+            chown -R "$uid:$(id -g "$user")" "$dirPath"
         else
             log "Directory already exists: $dirPath"
         fi
