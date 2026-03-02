@@ -1,22 +1,41 @@
-# Secure defaults
-# See: https://stribika.github.io/2015/01/04/secure-secure-shell.html
-Protocol 2
+# Hardened SFTP-only server configuration
 HostKey /etc/ssh/ssh_host_ed25519_key
-HostKey /etc/ssh/ssh_host_rsa_key
 
-# Faster connection
-# See: https://github.com/atmoz/sftp/issues/11
+# Skip reverse DNS lookups for faster connections
 UseDNS no
 
-# Limited access
+# Authentication: key-only, no passwords
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+AuthenticationMethods publickey
+PermitEmptyPasswords no
+
+# Access restrictions
 PermitRootLogin no
 X11Forwarding no
 AllowTcpForwarding no
 
-# Force sftp and chroot jail
+# Force SFTP with chroot jail
 Subsystem sftp internal-sftp
 ForceCommand internal-sftp
 ChrootDirectory %h
 
-# Enable this for more logs
-#LogLevel VERBOSE
+# Rate limiting
+MaxAuthTries 3
+MaxStartups 5:50:10
+LoginGraceTime 30
+
+# Client keepalive (disconnect after ~10 min idle)
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Cryptographic hardening
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+
+# Logging (VERBOSE for audit trail)
+LogLevel VERBOSE
