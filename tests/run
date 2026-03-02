@@ -11,7 +11,7 @@ argOutput=${2:-"quiet"}
 argCleanup=${3:-"cleanup"}
 testDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 buildDir="$testDir/.."
-imageName="atmoz/sftp_test"
+imageName="sftp_test"
 buildOptions=(--tag "$imageName")
 
 if [ "$argOutput" == "quiet" ]; then
@@ -45,12 +45,12 @@ function oneTimeSetUp() {
     fi
 
     # Generate temporary ssh keys for testing
-    if [ ! -f "/tmp/atmoz_sftp_test_rsa" ]; then
-        ssh-keygen -t rsa -f "/tmp/atmoz_sftp_test_rsa" -N '' > "$redirect" 2>&1
+    if [ ! -f "/tmp/sftp_test_rsa" ]; then
+        ssh-keygen -t rsa -f "/tmp/sftp_test_rsa" -N '' > "$redirect" 2>&1
     fi
 
     # Private key can not be read by others (sshd will complain)
-    chmod go-rw "/tmp/atmoz_sftp_test_rsa"
+    chmod go-rw "/tmp/sftp_test_rsa"
 }
 
 function oneTimeTearDown() {
@@ -61,7 +61,7 @@ function oneTimeTearDown() {
 
 function setUp() {
     # shellcheck disable=SC2154
-    containerName="atmoz_sftp_${_shunit_test_}"
+    containerName="sftp_test_${_shunit_test_}"
     containerTmpDir="$(mktemp -d "/tmp/${containerName}_XXXX")"
     export containerName containerTmpDir
 
@@ -104,7 +104,7 @@ function runSftpCommands() {
     done
 
     echo "$commands" | sftp \
-        -i "/tmp/atmoz_sftp_test_rsa" \
+        -i "/tmp/sftp_test_rsa" \
         -oStrictHostKeyChecking=no \
         -oUserKnownHostsFile=/dev/null \
         -b - "$user@$ip" \
@@ -252,7 +252,7 @@ function testCreateUsersUsingCombo() {
 
 function testWriteAccessToAutocreatedDirs() {
     docker run --name "$containerName" -d \
-        -v "/tmp/atmoz_sftp_test_rsa.pub":/home/test/.ssh/keys/id_rsa.pub:ro \
+        -v "/tmp/sftp_test_rsa.pub":/home/test/.ssh/keys/id_rsa.pub:ro \
         "$imageName" "test::::testdir,dir with spaces" \
         > "$redirect" 2>&1
 
@@ -284,10 +284,10 @@ function testBindmountDirScript() {
 
     docker run --name "$containerName" -d \
         --privileged=true \
-        -v "/tmp/atmoz_sftp_test_rsa.pub":/home/custom/.ssh/keys/id_rsa.pub:ro \
+        -v "/tmp/sftp_test_rsa.pub":/home/custom/.ssh/keys/id_rsa.pub:ro \
         -v "$containerTmpDir/custom/bindmount":/custom \
         -v "$containerTmpDir/mount.sh":/etc/sftp.d/mount.sh \
-        "$imageName" custom:123 \
+        "$imageName" custom: \
         > "$redirect" 2>&1
 
     waitForServer "$containerName"
@@ -301,6 +301,20 @@ function testBindmountDirScript() {
 
     docker exec "$containerName" test -d /home/custom/bindmount/test
     assertTrue "directory exist" $?
+}
+
+function testPasswordAuthDisabled() {
+    docker run --name "$containerName" -d \
+        -v "/tmp/sftp_test_rsa.pub":/home/testuser/.ssh/keys/id_rsa.pub:ro \
+        "$imageName" "testuser::::upload" \
+        > "$redirect" 2>&1
+
+    waitForServer "$containerName"
+    assertTrue "waitForServer" $?
+
+    # Verify sshd effective config disables password auth
+    docker exec "$containerName" sshd -T | grep -q "passwordauthentication no"
+    assertTrue "password auth disabled in sshd config" $?
 }
 
 ##############################################################################
