@@ -1,180 +1,187 @@
-# SFTP
+# SFTP Server
 
-![Docker Automated build](https://img.shields.io/docker/automated/atmoz/sftp.svg) ![Docker Build Status](https://img.shields.io/docker/build/atmoz/sftp.svg) ![Docker Stars](https://img.shields.io/docker/stars/atmoz/sftp.svg) ![Docker Pulls](https://img.shields.io/docker/pulls/atmoz/sftp.svg)
+Hardened SFTP server in a Docker container, using OpenSSH with key-only
+authentication and chroot jails.
 
-![OpenSSH logo](https://raw.githubusercontent.com/atmoz/sftp/master/openssh.png "Powered by OpenSSH")
+## Features
 
-# Supported tags and respective `Dockerfile` links
+- **Key-only authentication** -- passwords are disabled entirely
+- **Chroot jails** -- each user is confined to their home directory
+- **Hardened cryptography** -- modern ciphers, MACs, and key exchange only
+- **No shell access** -- `ForceCommand internal-sftp` with `/usr/sbin/nologin`
+- **Rate limiting** -- `MaxAuthTries`, `MaxStartups`, and `LoginGraceTime`
+- **Health checks** -- built-in Docker `HEALTHCHECK`
+- **Audit logging** -- `LogLevel VERBOSE` enabled by default
 
-- [`debian-stretch`, `debian`, `latest` (*Dockerfile*)](https://github.com/atmoz/sftp/blob/master/Dockerfile) [![](https://images.microbadger.com/badges/image/atmoz/sftp.svg)](http://microbadger.com/images/atmoz/sftp "Get your own image badge on microbadger.com")
-- [`debian-jessie` (*Dockerfile*)](https://github.com/atmoz/sftp/blob/debian-jessie/Dockerfile) [![](https://images.microbadger.com/badges/image/atmoz/sftp:debian-jessie.svg)](http://microbadger.com/images/atmoz/sftp:debian-jessie "Get your own image badge on microbadger.com")
-- [`alpine` (*Dockerfile*)](https://github.com/atmoz/sftp/blob/alpine/Dockerfile) [![](https://images.microbadger.com/badges/image/atmoz/sftp:alpine.svg)](http://microbadger.com/images/atmoz/sftp:alpine "Get your own image badge on microbadger.com")
+## Quick Start
 
-# Securely share your files
+### Prerequisites
 
-Easy to use SFTP ([SSH File Transfer Protocol](https://en.wikipedia.org/wiki/SSH_File_Transfer_Protocol)) server with [OpenSSH](https://en.wikipedia.org/wiki/OpenSSH).
-This is an automated build linked with the [debian](https://hub.docker.com/_/debian/) and [alpine](https://hub.docker.com/_/alpine/) repositories.
+- Docker
+- An SSH key pair for each SFTP user
 
-# Usage
+### 1. Generate host keys (recommended)
 
-- Define users in (1) command arguments, (2) `SFTP_USERS` environment variable
-  or (3) in file mounted as `/etc/sftp/users.conf` (syntax:
-  `user:pass[:e][:uid[:gid[:dir1[,dir2]...]]] ...`, see below for examples)
-  - Set UID/GID manually for your users if you want them to make changes to
-    your mounted volumes with permissions matching your host filesystem.
-  - Directory names at the end will be created under user's home directory with
-    write permission, if they aren't already present.
-- Mount volumes
-  - The users are chrooted to their home directory, so you can mount the
-    volumes in separate directories inside the user's home directory
-    (/home/user/**mounted-directory**) or just mount the whole **/home** directory.
-    Just remember that the users can't create new files directly under their
-    own home directory, so make sure there are at least one subdirectory if you
-    want them to upload files.
-  - For consistent server fingerprint, mount your own host keys (i.e. `/etc/ssh/ssh_host_*`)
+Generate persistent host keys to avoid MITM warnings on container recreation:
 
-# Examples
-
-## Simplest docker run example
-
-```
-docker run -p 22:22 -d atmoz/sftp foo:pass:::upload
+```bash
+ssh-keygen -t ed25519 -f ssh_host_ed25519_key -N '' < /dev/null
 ```
 
-User "foo" with password "pass" can login with sftp and upload files to a folder called "upload". No mounted directories or custom UID/GID. Later you can inspect the files and use `--volumes-from` to mount them somewhere else (or see next example).
+### 2. Run the container
 
-## Sharing a directory from your computer
-
-Let's mount a directory and set UID:
-
+```bash
+docker run -d \
+    -v ./ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro \
+    -v ./user_key.pub:/home/uploader/.ssh/keys/id_ed25519.pub:ro \
+    -v /host/upload:/home/uploader/upload \
+    -p 2222:22 \
+    your-org/sftp \
+    uploader:::1001:upload
 ```
-docker run \
-    -v /host/upload:/home/foo/upload \
-    -p 2222:22 -d atmoz/sftp \
-    foo:pass:1001
+
+### 3. Connect
+
+```bash
+sftp -P 2222 -i ~/.ssh/user_key uploader@<host>
 ```
 
-### Using Docker Compose:
+## User Configuration
 
+Users are defined in the format: `user:pass:uid:gid:dirs`
+
+| Field | Description | Required | Default |
+|-------|-------------|----------|---------|
+| user  | Username (POSIX, max 32 chars) | Yes | -- |
+| pass  | *(Ignored -- passwords disabled)* | No | -- |
+| uid   | User ID | No | Auto |
+| gid   | Group ID | No | Auto |
+| dirs  | Comma-separated directories to create | No | -- |
+
+> **Note:** The password field is retained for format compatibility but is
+> always ignored. Authentication is exclusively via SSH keys.
+
+The `:e:` encrypted password marker is also accepted for format
+compatibility and silently ignored.
+
+### Configuration methods
+
+Users can be configured via (in order of precedence):
+
+1. **Command arguments:**
+   ```bash
+   docker run ... your-org/sftp user1:::1001:upload user2:::1002:upload
+   ```
+2. **Environment variable:**
+   ```bash
+   docker run -e "SFTP_USERS=user1:::1001:upload user2:::1002:upload" ...
+   ```
+3. **Config file:**
+   ```bash
+   docker run -v ./users.conf:/etc/sftp/users.conf:ro ...
+   ```
+
+Example `users.conf`:
 ```
-sftp:
-    image: atmoz/sftp
-    volumes:
-        - /host/upload:/home/foo/upload
+uploader:::1001:upload
+reviewer:::1002:review
+```
+
+### SSH keys
+
+Mount each user's public key(s) into `/home/<user>/.ssh/keys/`:
+
+```bash
+-v /path/to/key.pub:/home/uploader/.ssh/keys/id_ed25519.pub:ro
+```
+
+All files in `.ssh/keys/` are concatenated into `authorized_keys` at
+startup. A warning is logged if no keys are found for a user.
+
+## Docker Compose Example
+
+```yaml
+services:
+  sftp:
+    image: your-org/sftp
     ports:
-        - "2222:22"
-    command: foo:pass:1001
+      - "2222:22"
+    volumes:
+      - ./ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./keys/uploader.pub:/home/uploader/.ssh/keys/id_ed25519.pub:ro
+      - ./upload:/home/uploader/upload
+    command: uploader:::1001:upload
 ```
 
-### Logging in
+## Host Keys
 
-The OpenSSH server runs by default on port 22, and in this example, we are forwarding the container's port 22 to the host's port 2222. To log in with the OpenSSH client, run: `sftp -P 2222 foo@<host-ip>`
+The container generates an ephemeral ed25519 host key on first start if
+none is mounted. **For production use, always mount your own host key** to
+provide a consistent server fingerprint:
 
-## Store users in config
-
-```
-docker run \
-    -v /host/users.conf:/etc/sftp/users.conf:ro \
-    -v mySftpVolume:/home \
-    -p 2222:22 -d atmoz/sftp
+```bash
+-v ./ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
 ```
 
-/host/users.conf:
-
-```
-foo:123:1001:100
-bar:abc:1002:100
-baz:xyz:1003:100
+Generate a host key with:
+```bash
+ssh-keygen -t ed25519 -f ssh_host_ed25519_key -N '' < /dev/null
 ```
 
-## Encrypted password
+Without a persistent host key, clients will see MITM warnings whenever the
+container is recreated.
 
-Add `:e` behind password to mark it as encrypted. Use single quotes if using terminal.
+## Custom Startup Scripts
 
-```
-docker run \
-    -v /host/share:/home/foo/share \
-    -p 2222:22 -d atmoz/sftp \
-    'foo:$1$0G2g0GSt$ewU0t6GXG15.0hWoOX8X9.:e:1001'
-```
+Place executable scripts in `/etc/sftp.d/` to run them at container startup
+(after user creation, before sshd starts):
 
-Tip: you can use [atmoz/makepasswd](https://hub.docker.com/r/atmoz/makepasswd/) to generate encrypted passwords:  
-`echo -n "your-password" | docker run -i --rm atmoz/makepasswd --crypt-md5 --clearfrom=-`
-
-## Logging in with SSH keys
-
-Mount public keys in the user's `.ssh/keys/` directory. All keys are automatically appended to `.ssh/authorized_keys` (you can't mount this file directly, because OpenSSH requires limited file permissions). In this example, we do not provide any password, so the user `foo` can only login with his SSH key.
-
-```
-docker run \
-    -v /host/id_rsa.pub:/home/foo/.ssh/keys/id_rsa.pub:ro \
-    -v /host/id_other.pub:/home/foo/.ssh/keys/id_other.pub:ro \
-    -v /host/share:/home/foo/share \
-    -p 2222:22 -d atmoz/sftp \
-    foo::1001
+```bash
+-v ./my-script.sh:/etc/sftp.d/my-script.sh
 ```
 
-## Providing your own SSH host key (recommended)
+Scripts must have the execute permission set (`chmod +x`). They run as root.
 
-This container will generate new SSH host keys at first run. To avoid that your users get a MITM warning when you recreate your container (and the host keys changes), you can mount your own host keys.
+## Security Configuration
 
-```
-docker run \
-    -v /host/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key \
-    -v /host/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key \
-    -v /host/share:/home/foo/share \
-    -p 2222:22 -d atmoz/sftp \
-    foo::1001
-```
+The following hardening is applied by default (see `files/sshd_config`):
 
-Tip: you can generate your keys with these commands:
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `PasswordAuthentication` | `no` | Key-only access |
+| `AuthenticationMethods` | `publickey` | Enforce single auth method |
+| `MaxAuthTries` | `3` | Limit brute force |
+| `MaxStartups` | `5:50:10` | Connection rate limiting |
+| `LoginGraceTime` | `30` | Fast timeout for unauthenticated sessions |
+| `ChrootDirectory` | `%h` | Jail users to home directory |
+| `ForceCommand` | `internal-sftp` | No shell access |
+| `KexAlgorithms` | `curve25519-sha256` variants | Modern key exchange only |
+| `Ciphers` | `chacha20-poly1305`, `aes256-gcm`, `aes128-gcm` | AEAD ciphers only |
+| `MACs` | `hmac-sha2-512-etm`, `hmac-sha2-256-etm` | Encrypt-then-MAC only |
+| `LogLevel` | `VERBOSE` | Audit logging |
+| `ClientAliveInterval` | `300` | Disconnect idle sessions (~10 min) |
 
-```
-ssh-keygen -t ed25519 -f ssh_host_ed25519_key < /dev/null
-ssh-keygen -t rsa -b 4096 -f ssh_host_rsa_key < /dev/null
-```
+## Building
 
-## Execute custom scripts or applications
-
-Put your programs in `/etc/sftp.d/` and it will automatically run when the container starts.
-See next section for an example.
-
-## Bindmount dirs from another location
-
-If you are using `--volumes-from` or just want to make a custom directory available in user's home directory, you can add a script to `/etc/sftp.d/` that bindmounts after container starts.
-
-```
-#!/bin/bash
-# File mounted as: /etc/sftp.d/bindmount.sh
-# Just an example (make your own)
-
-function bindmount() {
-    if [ -d "$1" ]; then
-        mkdir -p "$2"
-    fi
-    mount --bind $3 "$1" "$2"
-}
-
-# Remember permissions, you may have to fix them:
-# chown -R :users /data/common
-
-bindmount /data/admin-tools /home/admin/tools
-bindmount /data/common /home/dave/common
-bindmount /data/common /home/peter/common
-bindmount /data/docs /home/peter/docs --read-only
+```bash
+docker build -t your-org/sftp .
 ```
 
-**NOTE:** Using `mount` requires that your container runs with the `CAP_SYS_ADMIN` capability turned on. [See this answer for more information](https://github.com/atmoz/sftp/issues/60#issuecomment-332909232).
+## Testing
 
-# What's the difference between Debian and Alpine?
+Tests use [shunit2](https://github.com/kward/shunit2) and require Docker:
 
-The biggest differences are in size and OpenSSH version. [Alpine](https://hub.docker.com/_/alpine/) is 10 times smaller than [Debian](https://hub.docker.com/_/debian/). OpenSSH version can also differ, as it's two different teams maintaining the packages. Debian is generally considered more stable and only bugfixes and security fixes are added after each Debian release (about 2 years). Alpine has a faster release cycle (about 6 months) and therefore newer versions of OpenSSH. As I'm writing this, Debian has version 7.4 while Alpine has version 7.5. Recommended reading: [Comparing Debian vs Alpine for container & Docker apps](https://www.turnkeylinux.org/blog/alpine-vs-debian)
+```bash
+git submodule update --init
+sudo tests/run
+```
 
-# What version of OpenSSH do I get?
+Arguments: `build|nobuild`, `quiet|verbose`, `cleanup|nocleanup`
 
-It depends on which linux distro and version you choose (see available images at the top). You can see what version you get by checking the distro's packages online. I have provided direct links below for easy access.
+```bash
+sudo tests/run build verbose cleanup
+```
 
-- [List of `openssh` packages on Alpine releases](https://pkgs.alpinelinux.org/packages?name=openssh&branch=&repo=main&arch=x86_64)
-- [List of `openssh-server` packages on Debian releases](https://packages.debian.org/search?keywords=openssh-server&searchon=names&exact=1&suite=all&section=main)
+## License
 
-**Note:** The time when this image was last built can delay the availability of an OpenSSH release. Since this is an automated build linked with [debian](https://hub.docker.com/_/debian/) and [alpine](https://hub.docker.com/_/alpine/) repos, the build will depend on how often they push changes (out of my control).  Typically this can take 1-5 days, but it can also take longer. You can of course make this more predictable by cloning this repo and run your own build manually.
+MIT License. See [LICENSE.txt](LICENSE.txt).
