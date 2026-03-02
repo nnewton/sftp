@@ -8,7 +8,6 @@ UseDNS no
 PubkeyAuthentication yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-ChallengeResponseAuthentication no
 UsePAM no
 AuthenticationMethods publickey
 PermitEmptyPasswords no

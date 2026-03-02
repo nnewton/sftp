@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.title="sftp" \
       org.opencontainers.image.description="Hardened SFTP server (key-only auth)" \

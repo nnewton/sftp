@@ -4,7 +4,7 @@ Hardened SFTP-only Docker container. Key-only authentication, chroot jails.
 
 ## File Structure
 
-- `Dockerfile` -- Container build (debian:bookworm-slim + openssh-server)
+- `Dockerfile` -- Container build (debian:trixie-slim + openssh-server, OpenSSH 10.0)
 - `files/sshd_config` -- OpenSSH server configuration (hardened)
 - `files/entrypoint` -- Container entrypoint (user creation, key generation, sshd)
 - `files/create-sftp-user` -- User creation script (called per user line)
